@@ -123,7 +123,107 @@ CREATE TABLE IF NOT EXISTS transfer_jobs(
   note TEXT,
   created_at TEXT NOT NULL
 );
+-- 互证册：确认同事务双写（甲路径），与正式册 bookings 1:1
+CREATE TABLE IF NOT EXISTS attestations(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  proof_code TEXT UNIQUE NOT NULL,
+  booking_id INTEGER NOT NULL UNIQUE,
+  hold_id INTEGER,
+  slot_id INTEGER NOT NULL,
+  party_key TEXT NOT NULL,
+  seats INTEGER NOT NULL,
+  snapshot_gen INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 """
+
+# 甲路径钉死（2026-11-21 当日锁死）：确认与互证同事务双写。
+# 互证册只允许「已签发」一种态；草稿/作废属于乙路径残留，出现即偏航拒写。
+ATTESTATION_STATUS_FINAL = "已签发"
+ATTESTATION_DRIFT_ACTION = "确认互证偏航"
+ATTESTATION_ALLOWED_STATUSES = (ATTESTATION_STATUS_FINAL,)
+ATTESTATION_DRIFT_STATUSES = ("草稿", "已作废")
+
+
+class AttestationDriftError(RuntimeError):
+    """偏航：试图以草稿/作废等非终态写互证册（与乙路径混用）。"""
+
+
+def write_attestation(
+    conn,
+    *,
+    proof_code: str,
+    booking_id: int,
+    hold_id: int | None,
+    slot_id: int,
+    party_key: str,
+    seats: int,
+    snapshot_gen: int,
+    status: str,
+    created_at: str,
+) -> int:
+    """同事务写互证册。状态非「已签发」即判偏航，由调用方拒写回滚。"""
+    if status not in ATTESTATION_ALLOWED_STATUSES:
+        raise AttestationDriftError(
+            f"互证状态 {status!r} 非甲路径终态 {ATTESTATION_STATUS_FINAL!r}，"
+            "禁止草稿/作废原子切换（乙路径）与同事务双写（甲路径）混用"
+        )
+    cur = conn.execute(
+        """INSERT INTO attestations(
+               proof_code,booking_id,hold_id,slot_id,party_key,seats,
+               snapshot_gen,status,created_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (
+            proof_code,
+            booking_id,
+            hold_id,
+            slot_id,
+            party_key,
+            seats,
+            snapshot_gen,
+            status,
+            created_at,
+        ),
+    )
+    return cur.lastrowid
+
+
+def backfill_attestations(conn) -> None:
+    """老库回填：升级前已确认的正式册补签互证，避免换库与假绿分裂。"""
+    rows = conn.execute(
+        """SELECT b.id,b.hold_id,b.slot_id,b.party_key,b.seats,b.snapshot_gen,b.created_at
+           FROM bookings b
+           LEFT JOIN attestations a ON a.booking_id=b.id
+           WHERE b.status='已确认' AND a.id IS NULL
+           ORDER BY b.id"""
+    ).fetchall()
+    for b in rows:
+        conn.execute(
+            """INSERT INTO attestations(
+                   proof_code,booking_id,hold_id,slot_id,party_key,seats,
+                   snapshot_gen,status,created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                f"PF-BACKFILL-{b['id']:06d}",
+                b["id"],
+                b["hold_id"],
+                b["slot_id"],
+                b["party_key"],
+                b["seats"],
+                b["snapshot_gen"],
+                ATTESTATION_STATUS_FINAL,
+                b["created_at"],
+            ),
+        )
+    if rows:
+        write_audit(
+            conn,
+            "system",
+            "attestation_backfill",
+            "attestations",
+            {"count": len(rows)},
+        )
 
 
 def write_audit(conn, actor: str, action: str, target: str, payload: dict | None = None) -> None:
@@ -215,4 +315,5 @@ def init_db() -> None:
         conn.executescript(SCHEMA)
         ensure_users(conn)
         seed_if_empty(conn)
+        backfill_attestations(conn)
         conn.commit()

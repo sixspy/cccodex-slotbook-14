@@ -5,6 +5,8 @@ export const slotsViewTemplate = `
       <div class="cell"><div class="n">{{ dash.slots_open }}</div>开放档</div>
       <div class="cell"><div class="n">{{ dash.holds_open }}</div>占位中</div>
       <div class="cell"><div class="n">{{ dash.bookings }}</div>正式册</div>
+      <div class="cell"><div class="n">{{ dash.attestations }}</div>互证册</div>
+      <div class="cell"><div class="n" :class="dash.attestation_split ? 'err' : ''">{{ dash.attestation_split || 0 }}</div>互证分裂</div>
       <div class="cell"><div class="n">{{ dash.waitlist }}</div>候补</div>
     </div>
     <table>

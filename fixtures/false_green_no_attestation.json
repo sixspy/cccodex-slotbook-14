@@ -1,0 +1,39 @@
+{
+  "case": "false_green_confirmed_without_attestation",
+  "note": "假绿：确认接口已返回成功、正式册有行、档期 booked 已增，但互证册零行。用于复现前台互证页空、误以为没订上的线上事故。",
+  "slots": [
+    {
+      "code": "S-FG-09",
+      "title": "假绿复现档",
+      "start_at": "2026-11-21T09:00:00",
+      "end_at": "2026-11-21T11:00:00",
+      "capacity": 10,
+      "status": "开放",
+      "generation": 1
+    }
+  ],
+  "holds": [
+    {
+      "slot_code": "S-FG-09",
+      "party_key": "P-FG-GREEN",
+      "seats": 2,
+      "status": "已确认",
+      "expire_at": "2026-12-31T23:59:59",
+      "created_at": "2026-11-21T08:00:00"
+    }
+  ],
+  "bookings": [
+    {
+      "slot_code": "S-FG-09",
+      "party_key": "P-FG-GREEN",
+      "seats": 2,
+      "snapshot_gen": 1,
+      "status": "已确认",
+      "created_at": "2026-11-21T08:05:00"
+    }
+  ],
+  "attestations": [],
+  "slot_booked_overrides": {
+    "S-FG-09": 2
+  }
+}

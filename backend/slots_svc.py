@@ -105,6 +105,12 @@ def close_slot(body: CloseIn, authorization: AuthHeader = None):
 def dashboard(authorization: AuthHeader = None):
     require_user(authorization)
     with connect() as conn:
+        confirmed = conn.execute(
+            "SELECT COUNT(*) c FROM bookings WHERE status='已确认'"
+        ).fetchone()["c"]
+        attested = conn.execute(
+            "SELECT COUNT(*) c FROM attestations WHERE status='已签发'"
+        ).fetchone()["c"]
         return {
             "slots_open": conn.execute(
                 "SELECT COUNT(*) c FROM slots WHERE status='开放'"
@@ -112,9 +118,9 @@ def dashboard(authorization: AuthHeader = None):
             "holds_open": conn.execute(
                 "SELECT COUNT(*) c FROM holds WHERE status='占位中'"
             ).fetchone()["c"],
-            "bookings": conn.execute(
-                "SELECT COUNT(*) c FROM bookings WHERE status='已确认'"
-            ).fetchone()["c"],
+            "bookings": confirmed,
+            "attestations": attested,
+            "attestation_split": max(confirmed - attested, 0),
             "waitlist": conn.execute(
                 "SELECT COUNT(*) c FROM waitlist WHERE status='候补中'"
             ).fetchone()["c"],
